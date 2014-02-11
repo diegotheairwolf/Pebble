@@ -7,5 +7,5 @@ vibrations and displaying the accelerometer values.
 
 
 
-P.S.: Don't mess with this folder bitches!!!
--Pablo Picasso
+P.S.: Don't mess with this folder b!tch3s!!!
+-Picasso
