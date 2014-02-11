@@ -1,0 +1,17 @@
+{
+  "uuid": "6a8a653f-108e-460d-9838-791148437e9d",
+  "shortName": "SeizeAlert",
+  "longName": "SeizeAlert",
+  "companyName": "MakeAwesomeHappen",
+  "versionCode": 1,
+  "versionLabel": "1.0.0",
+  "watchapp": {
+    "watchface": false
+  },
+  "appKeys": {
+    "dummy": 0
+  },
+  "resources": {
+    "media": []
+  }
+}
