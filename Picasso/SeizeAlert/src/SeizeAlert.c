@@ -14,11 +14,11 @@ static AppTimer *timer;
 static int last_x = 0;
 
 static int highest_x = 0;
-static int lowest_x = 0;
 static int highest_y = 0;
-static int lowest_y = 0;
 static int highest_z = 0;
-static int lowest_z = 0;
+
+static int overall = 0;
+static int temp_overall = 0;
 
 bool false_positive = true;
 static AccelData history[HISTORY_MAX];
@@ -65,16 +65,20 @@ static void timer_callback() {
   // values to screen, and set timer again
   if (!false_positive){
 
-    highest_x = ((accel.x > highest_x) ? accel.x : highest_x);
-    highest_y = ((accel.y > highest_y) ? accel.y : highest_y);
-    highest_z = ((accel.z > highest_z) ? accel.z : highest_z);
+    temp_overall = (accel.x * accel.x) + (accel.y * accel.y) + (accel.z * accel.z);
 
-    lowest_x = ((accel.x < lowest_x) ? accel.x : lowest_x);
-    lowest_y = ((accel.y < lowest_y) ? accel.y : lowest_y);
-    lowest_z = ((accel.z < lowest_z) ? accel.z : lowest_z);
+    if (temp_overall > overall){
+      overall = temp_overall;
+      highest_x = accel.x;
+      highest_y = accel.y;
+      highest_z = accel.z;
+    } else {
+      overall = overall;
+    }
+    overall = ((temp_overall > overall) ? temp_overall : overall);
 
     //vibes_short_pulse();
-    snprintf(text_buffer, 125, "X:%d, Y:%d, Z:%d \n High: \n X:%d, Y:%d, Z:%d \n Low: \n X:%d, Y:%d, Z:%d", (accel.x), (accel.y), (accel.z), highest_x, highest_y, highest_z, lowest_x, lowest_y, lowest_z);
+    snprintf(text_buffer, 125, "X:%d, Y:%d, Z:%d \n Overall:%d \n X:%d, Y:%d, Z:%d", accel.x, accel.y, accel.z, overall, highest_x, highest_y, highest_z);
 
     text_layer_set_text(text_layer, text_buffer);
     set_timer();	// Reset timer function
@@ -111,12 +115,10 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   false_positive = true;
   text_layer_set_text(text_layer, "False Positive \n shake it \n again");
 
+  overall = 0;
   highest_x = 0;
-  lowest_x = 0;
   highest_y = 0;
-  lowest_y = 0;
   highest_z = 0;
-  lowest_z = 0;
 }
 
 
