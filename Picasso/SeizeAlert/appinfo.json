@@ -17,7 +17,7 @@
         "menuIcon": true,
         "type": "png",
         "name": "IMAGE_MENU_ICON",
-        "file": "images/menu_seizealert_icon.png"
+        "file": "images/SeizeAlert_menu_icon.png"
       }
     ]
   }
