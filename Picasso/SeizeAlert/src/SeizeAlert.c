@@ -3,25 +3,27 @@
 
 #define MAX_ACCEL 4000
 #define HISTORY_MAX 100
-#define WINDOW_HORIZON 10
 
 /////////////////////  Globals  //////////////////////////
 static Window *window;
 static TextLayer *text_layer;
+
 char text_buffer[250];
-int timer_frequency = 50;
+int timer_frequency = 100;		// Time setup for timer function in milliseconds
 static AppTimer *timer;
 static int last_x = 0;
 
-static int highest_x = 0;
+static int highest_x = 0;		// Variables used to get highest overall acceleration at any point
 static int highest_y = 0;
 static int highest_z = 0;
-
 static int overall = 0;
 static int temp_overall = 0;
 
-bool false_positive = true;
-static AccelData history[HISTORY_MAX];
+bool false_positive = true;		// State of false positive
+
+static int debugging_counter = 0;
+
+static AccelData history[HISTORY_MAX];	// Array of accelerometer data
 
 //////////////////////////////////////////////////////////
 
@@ -61,14 +63,19 @@ static void timer_callback() {
   last_x++;
   if (last_x >= HISTORY_MAX) last_x = 0;
 
+  // Log values to smartphone every 10 seconds
+  if (last_x == (HISTORY_MAX-1)){
+    					// TODO: Add logic after data logging has been enabled 
+  }
+
   // Check for false positive, print accelerometer 
   // values to screen, and set timer again
   if (!false_positive){
+    temp_overall = abs(accel.x) + (accel.y) + abs(accel.z);
 
-    // Display values on log
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "X: %d, Y:%d, Z:%d", accel.x, accel.y, accel.z);
+    snprintf(text_buffer, 124, "Time: %d\n X:%d,Y:%d,Z:%d", last_x, accel.x, accel.y, accel.z);
 
-    temp_overall = (accel.x * accel.x) + (accel.y * accel.y) + (accel.z * accel.z);
+    APP_LOG(APP_LOG_LEVEL_DEBUG, text_buffer);
 
     if (temp_overall > overall){
       overall = temp_overall;
