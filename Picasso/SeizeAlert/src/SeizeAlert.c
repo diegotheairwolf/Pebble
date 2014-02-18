@@ -65,6 +65,9 @@ static void timer_callback() {
   // values to screen, and set timer again
   if (!false_positive){
 
+    // Display values on log
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "X: %d, Y:%d, Z:%d", accel.x, accel.y, accel.z);
+
     temp_overall = (accel.x * accel.x) + (accel.y * accel.y) + (accel.z * accel.z);
 
     if (temp_overall > overall){
@@ -197,10 +200,8 @@ static void deinit(void) {
 
 
 int main(void) {
-  init();
-  
+  init();  
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Done initializing, pushed window: %p", window);
-
   app_event_loop();
   deinit();
 }
