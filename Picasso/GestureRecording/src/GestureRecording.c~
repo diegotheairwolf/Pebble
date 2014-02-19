@@ -59,7 +59,8 @@ static void timer_callback() {
   // Check if last record
   if (last_x < HISTORY_MAX){
     set_timer();			// Reset timer function
-    text_layer_set_text(text_layer, "Reconding for\n%d seconds...", secs);
+    snprintf(text_buffer, 124, "Reconding for\n%d seconds...", secs);
+    text_layer_set_text(text_layer, text_buffer);
   } 
   if (last_x >= HISTORY_MAX){
     record_gesture = false;		// End recording
@@ -80,9 +81,9 @@ void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 
 
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
-  vibes_short_pulse();
-  text_layer_set_text(text_layer, "Reconding for\n10 seconds...");
   if (record_gesture == false){
+    vibes_short_pulse();
+    text_layer_set_text(text_layer, "Reconding for\n10 seconds...");
     record_gesture = true;
     set_timer();
   }
