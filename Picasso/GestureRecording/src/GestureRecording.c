@@ -82,7 +82,7 @@ void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (record_gesture == false){
-    vibes_short_pulse();
+    //vibes_short_pulse();
     text_layer_set_text(text_layer, "Reconding for\n10 seconds...");
     record_gesture = true;
     set_timer();
