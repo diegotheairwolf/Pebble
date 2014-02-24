@@ -1,7 +1,7 @@
 {
   "uuid": "7ab5fef7-cbca-4935-92dc-5fb19f042094",
-  "shortName": "Gesture Recording",
-  "longName": "Gesture Recording",
+  "shortName": "GestureRecording",
+  "longName": "GestureRecording",
   "companyName": "Pablo C.",
   "versionCode": 1,
   "versionLabel": "1.0.0",

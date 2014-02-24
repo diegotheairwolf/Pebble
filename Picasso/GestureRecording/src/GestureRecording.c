@@ -1,15 +1,14 @@
 #include <pebble.h>
 #include <GestureRecording.h>
 
-#define MAX_ACCEL 4000
-#define HISTORY_MAX 100
+#define HISTORY_MAX 250
 
 /////////////////////  Globals  //////////////////////////
 static Window *window;
 static TextLayer *text_layer;
 
 char text_buffer[250];
-int timer_frequency = 100;		// Time setup for timer function in milliseconds
+int timer_frequency = 40;		// Time setup for timer function in milliseconds
 static AppTimer *timer;
 static int last_x = 0;
 
@@ -41,7 +40,7 @@ static void set_timer() {
 */
 
 static void timer_callback() {
-  int secs = (10 - (last_x/10));
+  int secs = (10 - (last_x/25));
 
   // Get last value from accelerometer
   AccelData accel;
@@ -65,7 +64,7 @@ static void timer_callback() {
   if (last_x >= HISTORY_MAX){
     record_gesture = false;		// End recording
     last_x = 0;
-    text_layer_set_text(text_layer, "Gesture Reconded\nsuccesfully");
+    text_layer_set_text(text_layer, "Gesture Recorded\nsuccesfully");
   }
 }
 
