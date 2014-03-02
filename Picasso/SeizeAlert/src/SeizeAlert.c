@@ -1,8 +1,10 @@
 #include <pebble.h>
+#include <pebble_fonts.h>
 #include <SeizeAlert.h>
 
-#define MAX_ACCEL 4000
-#define HISTORY_MAX 100
+#define HISTORY_MAX 20
+#define THRESHSOLD 1000
+#define ALERT_WINDOW 10
 
 /////////////////////  Globals  //////////////////////////
 
@@ -11,20 +13,15 @@ static const uint32_t SEIZURE_LOG_TAGS[2] = { 0x5, 0xd }; // fall, seizure
 static Window *window;
 static TextLayer *text_layer;
 
+static int cntdown_ctr = 0;
+
 char text_buffer[250];
 int timer_frequency = 100;		// Time setup for timer function in milliseconds
+int countdown_frequency = 1000;		// Time setup for countdown function in milliseconds
 static AppTimer *timer;
 static int last_x = 0;
 
-static int highest_x = 0;		// Variables used to get highest overall acceleration at any point
-static int highest_y = 0;
-static int highest_z = 0;
-static int overall = 0;
-static int temp_overall = 0;
-
 bool false_positive = true;		// State of false positive
-
-static int debugging_counter = 0;
 
 static AccelData history[HISTORY_MAX];	// Array of accelerometer data
 
@@ -44,12 +41,55 @@ static SeizureData s_seizure_datas[2]; // 0 = fall, 1 = seizure
 
 
 /*
-	This function sets the time to next call at 
+	Custom square root function. Math library
+	is not completely included with Pebble SDK. 
+*/
+  float my_sqrt(const float num) {
+  const uint MAX_STEPS = 40;
+  const float MAX_ERROR = 0.001;
+  
+  float answer = num;
+  float ans_sqr = answer * answer;
+  uint step = 0;
+  while((ans_sqr - num > MAX_ERROR) && (step++ < MAX_STEPS)) {
+    answer = (answer + (num / answer)) / 2;
+    ans_sqr = answer * answer;
+  }
+  return answer;
+}
+
+
+
+/*
+	This functions sets the time to next call at 
 	timer_frequency in milliseconds.
 */
-
 static void set_timer() {
   timer = app_timer_register(timer_frequency, timer_callback, NULL);
+}
+
+
+
+static void set_countdown() {
+  timer = app_timer_register(countdown_frequency, countdown_callback, NULL);
+}
+
+
+
+static void countdown_callback() {
+  if (!false_positive){
+    if (cntdown_ctr == 10) {
+      cntdown_ctr = 0;
+      report_fall();
+      text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
+      text_layer_set_text(text_layer, "A fall has been\nreported to\nyour phone.");
+      false_positive = true;
+    } else {
+      display_countdown(ALERT_WINDOW - cntdown_ctr);
+      cntdown_ctr++;
+      set_countdown();
+    }
+  }
 }
 
 
@@ -61,7 +101,6 @@ static void set_timer() {
 	values to screen and sets timer to come
 	back here again, using set_timer().
 */
-
 static void timer_callback() {
   // Get last value from accelerometer
   AccelData accel;
@@ -70,56 +109,32 @@ static void timer_callback() {
   accel.z = 0;
   accel_service_peek(&accel);
 
-  // Save to history and increase counter
+  // Save to history buffer and increase counter
   history[last_x].x = accel.x;
   history[last_x].y = accel.y;
   history[last_x].z = accel.z;
   last_x++;
-  if (last_x >= HISTORY_MAX) last_x = 0;
 
-  // Log values to smartphone every 10 seconds
-  if (last_x == (HISTORY_MAX-1)){
-    					// TODO: Add logic after data logging has been enabled 
+  // Check if last value on buffer
+  if (last_x >= HISTORY_MAX) {
+    last_x = 0;
+    test_buffer_vals(); 	// Test all buffer values
   }
-
-  // Check for false positive, print accelerometer 
-  // values to screen, and set timer again
-  if (!false_positive){
-    temp_overall = abs(accel.x) + (accel.y) + abs(accel.z);
-
-    snprintf(text_buffer, 124, "Time: %d\n X:%d,Y:%d,Z:%d", last_x, accel.x, accel.y, accel.z);
-
-    APP_LOG(APP_LOG_LEVEL_DEBUG, text_buffer);
-
-    if (temp_overall > overall){
-      overall = temp_overall;
-      highest_x = accel.x;
-      highest_y = accel.y;
-      highest_z = accel.z;
-    } else {
-      overall = overall;
-    }
-    overall = ((temp_overall > overall) ? temp_overall : overall);
-
-    //vibes_short_pulse();
-    snprintf(text_buffer, 125, "X:%d, Y:%d, Z:%d \n Overall:%d \n X:%d, Y:%d, Z:%d", accel.x, accel.y, accel.z, overall, highest_x, highest_y, highest_z);
-
-    text_layer_set_text(text_layer, text_buffer);
-    set_timer();	// Reset timer function
-  }
+  set_timer();			// Reset timer function
 }
 
 
 
 void accel_data_handler(AccelData *data, uint32_t num_samples) {
-  // Process 10 events - every 1 second
-  
+  // Do nothing!
 }
 
 
 
+/*
+	Report that a fall has happened!!!
+*/
 static void report_fall(void) {
-  // A fall has happened!
   SeizureData *seizure_data = &s_seizure_datas[0];
   time_t now = time(NULL);
   data_logging_log(seizure_data->logging_session, (uint8_t *)&now, 1);
@@ -131,43 +146,75 @@ static void report_fall(void) {
 
 
 /*
-	Process tap on ACCEL_AXIS_X, ACCEL_AXIS_Y or ACCEL_AXIS_Z
-	Direction is 1 or -1.
+	Report that a seizure has happened!!!
 */
+static void report_seizure(void) {
+  SeizureData *seizure_data = &s_seizure_datas[1];
+  time_t now = time(NULL);
+  data_logging_log(seizure_data->logging_session, (uint8_t *)&now, 1);
+  data_logging_finish(seizure_data->logging_session);
 
-void accel_tap_handler(AccelAxisType axis, int32_t direction) {
-  // Initialize timer routine
-  if (false_positive == true){
-    set_timer();
-    report_fall();
-    false_positive = false;
-  }
-  //text_layer_set_text(text_layer, "Shaked");
+  seizure_data->logging_session = data_logging_create(SEIZURE_LOG_TAGS[1], DATA_LOGGING_UINT, 4, false);
 }
 
 
 
-static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
-  // False positive!!!
-  false_positive = true;
-  text_layer_set_text(text_layer, "False Positive \n shake it \n again");
+void accel_tap_handler(AccelAxisType axis, int32_t direction) {
+  // Do nothing
+}
 
-  overall = 0;
-  highest_x = 0;
-  highest_y = 0;
-  highest_z = 0;
+
+
+/*
+	This functions checks all values on the buffer and
+	tests for a certain treshold (constant THRESHSOLD).
+*/
+void test_buffer_vals(void){
+  int test, x, y, z;
+  for (int i=0 ; i < HISTORY_MAX ; i++){
+    x = (history[i].x) * (history[i].x);
+    y = (history[i].y) * (history[i].y);
+    z = (history[i].z) * (history[i].z);
+    test = (int)(abs(my_sqrt(x + y + z)-1000));		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
+
+    if ((test > THRESHSOLD)  && false_positive) {	// Trigger countdown of fall event
+      false_positive = false;
+      text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
+      display_countdown(10);
+      cntdown_ctr++;
+      set_countdown();
+    } 
+  }
+}
+
+
+
+void display_countdown(int count){
+  snprintf(text_buffer, 124, "%d", count);
+  text_layer_set_text(text_layer, text_buffer);
+}
+
+
+
+/*
+	This is the handler function for the false
+	positive button (SELECT button on Pebble).
+*/
+static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
+  false_positive = true;
+  cntdown_ctr = 0;
+  text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
+  text_layer_set_text(text_layer, "False Positive \n shake it \n again");
 }
 
 
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-//  text_layer_set_text(text_layer, "Up");
 }
 
 
 
 static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
-//  text_layer_set_text(text_layer, "Down");
 }
 
 
@@ -185,14 +232,13 @@ static void window_load(Window *window) {
   accel_service_set_sampling_rate(ACCEL_SAMPLING_10HZ);
   accel_tap_service_subscribe(&accel_tap_handler);
 
-  //accel_data_service_subscribe(0, &accel_data_handler);
-
   // initialize window
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
-  text_layer = text_layer_create((GRect) { .origin = { 0, 50 }, .size = { bounds.size.w, 100 } });
-  text_layer_set_text(text_layer, "Try to \n shake it \n hard");
+  text_layer = text_layer_create((GRect) { .origin = { 0, 40 }, .size = { bounds.size.w, 100 } });
+  text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
+  text_layer_set_text(text_layer, "Program running\nat normal state.");
   
   text_layer_set_overflow_mode(text_layer, GTextOverflowModeWordWrap);
 
@@ -239,14 +285,14 @@ static void init(void) {
   });
   const bool animated = true;
   window_stack_push(window, animated);
+  
+  // Initialize Buffer at 20Hz
+  set_timer();
 }
 
 
 
 static void deinit(void) {
-  // deinit accel batches
-//  accel_data_service_unsubscribe();
-
   // deinit accel tap
   accel_tap_service_unsubscribe();
   
