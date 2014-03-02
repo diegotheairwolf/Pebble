@@ -2,8 +2,10 @@
 #include <pebble_fonts.h>
 #include <SeizeAlert.h>
 
-#define HISTORY_MAX 20
-#define THRESHSOLD 1000
+#define HISTORY_MAX 20			// Check buffer every 2 seconds (20 accel data at 10Hz)
+#define FALL_THRESHSOLD 1000
+#define SEIZURE_THRESHSOLD 800
+#define SEIZURE_SHAKING 3
 #define ALERT_WINDOW 10
 
 /////////////////////  Globals  //////////////////////////
@@ -22,6 +24,9 @@ static AppTimer *timer;
 static int last_x = 0;
 
 bool false_positive = true;		// State of false positive
+bool event_seizure = false;
+bool event_fall = false;
+int shake_counter = 0;
 
 static AccelData history[HISTORY_MAX];	// Array of accelerometer data
 
@@ -80,10 +85,17 @@ static void countdown_callback() {
   if (!false_positive){
     if (cntdown_ctr == 10) {
       cntdown_ctr = 0;
-      report_fall();
       text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
-      text_layer_set_text(text_layer, "A fall has been\nreported to\nyour phone.");
+      if (event_seizure) {
+        report_seizure();
+        text_layer_set_text(text_layer, "A seizure has been\nreported to\nyour phone.");
+      } else {
+        report_fall();
+        text_layer_set_text(text_layer, "A fall has been\nreported to\nyour phone.");
+      }
       false_positive = true;
+      event_seizure = false;
+      event_fall = false;
     } else {
       display_countdown(ALERT_WINDOW - cntdown_ctr);
       cntdown_ctr++;
@@ -135,6 +147,8 @@ void accel_data_handler(AccelData *data, uint32_t num_samples) {
 	Report that a fall has happened!!!
 */
 static void report_fall(void) {
+  event_seizure = false;
+  event_fall = false;
   SeizureData *seizure_data = &s_seizure_datas[0];
   time_t now = time(NULL);
   data_logging_log(seizure_data->logging_session, (uint8_t *)&now, 1);
@@ -149,6 +163,8 @@ static void report_fall(void) {
 	Report that a seizure has happened!!!
 */
 static void report_seizure(void) {
+  event_seizure = false;
+  event_fall = false;
   SeizureData *seizure_data = &s_seizure_datas[1];
   time_t now = time(NULL);
   data_logging_log(seizure_data->logging_session, (uint8_t *)&now, 1);
@@ -167,7 +183,7 @@ void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 
 /*
 	This functions checks all values on the buffer and
-	tests for a certain treshold (constant THRESHSOLD).
+	tests for a certain treshold (constant FALL_THRESHSOLD).
 */
 void test_buffer_vals(void){
   int test, x, y, z;
@@ -177,13 +193,23 @@ void test_buffer_vals(void){
     z = (history[i].z) * (history[i].z);
     test = (int)(abs(my_sqrt(x + y + z)-1000));		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
 
-    if ((test > THRESHSOLD)  && false_positive) {	// Trigger countdown of fall event
-      false_positive = false;
-      text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
-      display_countdown(10);
-      cntdown_ctr++;
-      set_countdown();
-    } 
+    if ((test > FALL_THRESHSOLD)  && false_positive) {		// Trigger countdown of fall event
+      event_fall = true;
+    }
+
+    if ((test > SEIZURE_THRESHSOLD)  && false_positive) {	// Trigger countdown of fall event
+      shake_counter++;
+      if (shake_counter >= SEIZURE_SHAKING) event_seizure = true;
+    }
+  }
+  
+  if ((event_fall || event_seizure) && false_positive) {
+    false_positive = false;
+    shake_counter = 0;
+    text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
+    display_countdown(10);
+    cntdown_ctr++;
+    set_countdown();
   }
 }
 
@@ -202,6 +228,9 @@ void display_countdown(int count){
 */
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   false_positive = true;
+  event_seizure = false;
+  event_fall = false;
+  shake_counter = 0;
   cntdown_ctr = 0;
   text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
   text_layer_set_text(text_layer, "False Positive \n shake it \n again");
