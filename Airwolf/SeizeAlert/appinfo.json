@@ -1,0 +1,24 @@
+{
+  "uuid": "5f60123d-353f-421f-9882-1a3a71875a0e",
+  "shortName": "SeizeAlert",
+  "longName": "SeizeAlert",
+  "companyName": "Team Blackstone",
+  "versionCode": 1,
+  "versionLabel": "1.0.0",
+  "watchapp": {
+    "watchface": false
+  },
+  "appKeys": {
+    "dummy": 0
+  },
+  "resources": {
+    "media": [
+      {        
+        "menuIcon": true,
+        "type": "png",
+        "name": "IMAGE_MENU_ICON",
+        "file": "images/SeizeAlert_logo_pebble_2.png"
+      }
+    ]
+  }
+}
