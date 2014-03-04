@@ -13,12 +13,6 @@
   },
   "resources": {
     "media": [
-      {        
-        "menuIcon": true,
-        "type": "png",
-        "name": "IMAGE_MENU_ICON",
-        "file": "images/SeizeAlert_logo_pebble_2.png"
-      },
       {
         "type": "font",
         "name": "FONT_ROBOTO_CONDENSED_21",
