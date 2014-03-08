@@ -1,8 +1,8 @@
 {
   "uuid": "5f60123d-353f-421f-9882-1a3a71875a0e",
   "shortName": "SeizeAlert",
-  "longName": "SeizeAlert",
-  "companyName": "Team Blackstone",
+  "longName": "SeizeAlert, A Seizure Detection and Notification System",
+  "companyName": "SeizeAlert Inc.",
   "versionCode": 1,
   "versionLabel": "1.0.0",
   "watchapp": {
@@ -13,6 +13,7 @@
   },
   "resources": {
     "media": [
+      
       {
         "type": "font",
         "name": "FONT_ROBOTO_CONDENSED_21",

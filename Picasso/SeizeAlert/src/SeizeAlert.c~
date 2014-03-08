@@ -10,7 +10,7 @@
 
 //////////////////////////////////////////  Globals  ///////////////////////////////////////////////
 
-static const uint32_t SEIZURE_LOG_TAGS[2] = { 0x5, 0xd }; // fall, seizure
+static const uint32_t SEIZURE_LOG_TAGS[3] = { 0x5, 0xd, 0xe }; // fall, seizure
 
 // Watch layers
 TextLayer *text_date_layer;
@@ -47,7 +47,7 @@ typedef struct {
   GBitmap *bitmap;
 } SeizureData;
 
-static SeizureData s_seizure_datas[2]; // 0 = fall, 1 = seizure
+static SeizureData s_seizure_datas[3]; // 0 = fall, 1 = seizure, 2 = start of countdown
 
 
 
@@ -190,6 +190,20 @@ static void report_seizure(void) {
 
 
 
+/*
+	Report that countdown has started!!!
+*/
+static void report_countdown(void) {
+  SeizureData *seizure_data = &s_seizure_datas[2];
+  time_t now = time(NULL);
+  data_logging_log(seizure_data->logging_session, (uint8_t *)&now, 1);
+  data_logging_finish(seizure_data->logging_session);
+
+  seizure_data->logging_session = data_logging_create(SEIZURE_LOG_TAGS[2], DATA_LOGGING_UINT, 4, false);
+}
+
+
+
 void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   // Do nothing
 }
@@ -221,7 +235,7 @@ void test_buffer_vals(void){
   if ((event_fall || event_seizure) && false_positive) {
     false_positive = false;
     shake_counter = 0;
-    text_layer_set_font(text_time, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_BOLD_SUBSET_49)));
+    text_layer_set_font(text_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_BOLD_SUBSET_49)));
     display_countdown(10);
     cntdown_ctr++;
     if (event_seizure){
@@ -398,13 +412,17 @@ static void window_load(Window *window) {
 
 static void window_unload(Window *window) {
   text_layer_destroy(text_layer);
+  text_layer_destroy(text_layer_up);
+  text_layer_destroy(text_date_layer);
+  text_layer_destroy(text_time_layer);
+
   deinit_seizure_datas();
 }
 
 
 
 static void init_seizure_datas(void) {
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 3; i++) {
     SeizureData *seizure_data = &s_seizure_datas[i];
     seizure_data->logging_session = data_logging_create(SEIZURE_LOG_TAGS[i], DATA_LOGGING_UINT, 4, false);
   }

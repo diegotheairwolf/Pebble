@@ -2,6 +2,7 @@
 
 static void report_fall(void);
 static void report_seizure(void);
+static void report_countdown(void);
 static void init_seizure_datas(void);
 static void deinit_seizure_datas(void);
 static void timer_callback();

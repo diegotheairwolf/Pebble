@@ -10,3 +10,5 @@ static void countdown_callback();
 void test_buffer_vals(void);
 void display_countdown(int count);
 float my_sqrt(const float num);
+void set_seizealert_screen(void);
+void set_watchface_screen(void);
