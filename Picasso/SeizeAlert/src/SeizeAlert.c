@@ -19,6 +19,7 @@ Layer *line_layer;
 
 // SeizeAlert layers
 static Window *window;
+static TextLayer *seizealert_layer;
 static TextLayer *text_layer;
 static TextLayer *text_layer_up;
 
@@ -358,12 +359,23 @@ static void window_load(Window *window) {
   // init tap service
   accel_service_set_sampling_rate(ACCEL_SAMPLING_10HZ);
   accel_tap_service_subscribe(&accel_tap_handler);
-
-  // WatchFace Layers
   window_set_background_color(window, GColorBlack);
-
   Layer *window_layer = window_get_root_layer(window);
 
+  // Welcome User
+  GRect bounds = layer_get_bounds(window_layer);
+  seizealert_layer = text_layer_create((GRect) { .origin = { 0, 10 }, .size = { (bounds.size.w - 40), (bounds.size.h - 40) } });
+  text_layer_set_text_color(seizealert_layer, GColorWhite);
+  text_layer_set_background_color(seizealert_layer, GColorClear);
+  text_layer_set_font(seizealert_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  
+  text_layer_set_overflow_mode(seizealert_layer, GTextOverflowModeWordWrap);
+
+  text_layer_set_text_alignment(seizealert_layer, GTextAlignmentCenter);
+  layer_add_child(window_layer, text_layer_get_layer(seizealert_layer));
+  text_layer_set_text(seizealert_layer, "SeizeAlert!\nSeizeAlert Status:\n-Running");
+
+  // WatchFace Layers
   text_date_layer = text_layer_create(GRect(8, 68, 144-8, 168-68));
   text_layer_set_text_color(text_date_layer, GColorWhite);
   text_layer_set_background_color(text_date_layer, GColorClear);
@@ -382,8 +394,6 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, line_layer);
 
   // initialize SeizeAlert window Lower layer
-  GRect bounds = layer_get_bounds(window_layer);
-
   text_layer = text_layer_create((GRect) { .origin = { 0, 40 }, .size = { bounds.size.w, (bounds.size.h - 40) } });
   text_layer_set_text_color(text_layer, GColorWhite);
   text_layer_set_background_color(text_layer, GColorClear);
