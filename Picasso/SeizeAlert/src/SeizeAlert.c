@@ -10,7 +10,7 @@
 
 //////////////////////////////////////////  Globals  ///////////////////////////////////////////////
 
-static const uint32_t SEIZURE_LOG_TAGS[3] = { 0x5, 0xd, 0xe }; // fall, seizure
+static const uint32_t SEIZURE_LOG_TAGS[3] = { 0x5, 0xd, 0xe }; // fall, seizure, alert
 
 // Watch layers
 TextLayer *text_date_layer;
@@ -37,7 +37,7 @@ bool event_seizure = false;
 bool event_fall = false;
 int shake_counter = 0;
 
-static AccelData history[HISTORY_MAX];	// Array of accelerometer data
+static int history[HISTORY_MAX];	// Array of accelerometer data
 
 typedef struct {
   uint32_t tag;
@@ -130,17 +130,20 @@ static void countdown_callback() {
 	back here again, using set_timer().
 */
 static void timer_callback() {
+  int test, x, y, z;
+
   // Get last value from accelerometer
   AccelData accel;
-  accel.x = 0;
-  accel.y = 0;
-  accel.z = 0;
   accel_service_peek(&accel);
 
-  // Save to history buffer and increase counter
-  history[last_x].x = accel.x;
-  history[last_x].y = accel.y;
-  history[last_x].z = accel.z;
+  // Calculate accelerometer values
+  x = accel.x;
+  y = accel.y;
+  z = accel.z;
+  test = (int)(abs(my_sqrt(x + y + z)-1000));		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
+
+  // Save to circular buffer and increase counter
+  history[last_x] = test;
   last_x++;
 
   // Check if last value on buffer
@@ -216,18 +219,15 @@ void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 	tests for a certain treshold (constant FALL_THRESHSOLD).
 */
 void test_buffer_vals(void){
-  int test, x, y, z;
+  int test;
   for (int i=0 ; i < HISTORY_MAX ; i++){
-    x = (history[i].x) * (history[i].x);
-    y = (history[i].y) * (history[i].y);
-    z = (history[i].z) * (history[i].z);
-    test = (int)(abs(my_sqrt(x + y + z)-1000));		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
+    test = history[i];		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
 
     if ((test > FALL_THRESHSOLD)  && false_positive) {		// Trigger countdown of fall event
       event_fall = true;
     }
 
-    if ((test > SEIZURE_THRESHSOLD)  && false_positive) {	// Trigger countdown of fall event
+    if ((test > SEIZURE_THRESHSOLD)  && false_positive) {	// Trigger countdown of seizure event
       shake_counter++;
       if (shake_counter >= SEIZURE_SHAKING) event_seizure = true;
     }
