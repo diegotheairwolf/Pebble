@@ -13,7 +13,7 @@
   },
   "resources": {
     "media": [
-      {        
+      {
         "menuIcon": true,
         "type": "png",
         "name": "IMAGE_MENU_ICON",

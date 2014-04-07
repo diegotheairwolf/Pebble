@@ -14,6 +14,27 @@
   "resources": {
     "media": [
       {
+        "menuIcon": true,
+        "type": "png",
+        "name": "IMAGE_MENU_ICON",
+        "file": "images/seizealert_logo_pebble.png"
+      },
+      {
+        "type": "png",
+        "name": "BATTERY_CHARGE",
+        "file": "images/battery_charge.png"
+      },
+      {
+        "type": "png",
+        "name": "BATTERY_ICON",
+        "file": "images/battery_icon.png"
+      },
+      {
+        "type": "png",
+        "name": "BLUETOOTH_ICON",
+        "file": "images/bluetooth.png"
+      },
+      {
         "type": "font",
         "name": "FONT_ROBOTO_CONDENSED_21",
         "file": "fonts/Roboto-Condensed.ttf"

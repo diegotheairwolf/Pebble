@@ -1,12 +1,26 @@
+/*
+* SeizeAlert - A Seizure Notification and Detection System.
+*
+* Copyright © 2014 Pablo S. Campos.
+*
+* No part of this website may be reproduced without Pablo S. Campos's express consent.
+*
+*/
+
+
+
+
 #include <pebble.h>
 #include <pebble_fonts.h>
 #include <SeizeAlert.h>
 
 #define HISTORY_MAX 20			// Check buffer every 2 seconds (20 accel data at 10Hz)
-#define FALL_THRESHSOLD 1200
-#define SEIZURE_THRESHSOLD 1000
+#define FALL_THRESHSOLD 1500
+#define FALSE_POSITIVE_THRESHSOLD 900
+#define SEIZURE_THRESHSOLD 10000	// High value because we are NOT sure if we will attempt to detect a seizure
 #define SEIZURE_SHAKING 3
 #define ALERT_WINDOW 10
+#define COUNTDOWN_WINDOW 3
 
 //////////////////////////////////////////  Globals  ///////////////////////////////////////////////
 
@@ -16,6 +30,15 @@ static const uint32_t SEIZURE_LOG_TAGS[3] = { 0x5, 0xd, 0xe }; // fall, seizure,
 TextLayer *text_date_layer;
 TextLayer *text_time_layer;
 Layer *line_layer;
+
+// Battery and Bluetooth layers
+static Layer *progress_layer;
+static Layer *battery_layer;
+static BitmapLayer *bluetooth_layer;
+
+static GBitmap *icon_battery;
+static GBitmap *icon_battery_charge;
+static GBitmap *bluetooth_bitmap = NULL;
 
 // SeizeAlert layers
 static Window *window;
@@ -35,7 +58,7 @@ static int last_x = 0;
 bool false_positive = true;		// State of false positive
 bool event_seizure = false;
 bool event_fall = false;
-int shake_counter = 0;
+bool store_values = false;
 
 static int history[HISTORY_MAX];	// Array of accelerometer data
 
@@ -105,6 +128,7 @@ static void countdown_callback() {
         text_layer_set_text(text_layer_up, "SeizeAlert!!!");
         text_layer_set_text(text_layer, "A seizure has been\nreported to\nyour phone.");
       } else {
+        store_values = false;
         report_fall();
         text_layer_set_text(text_layer_up, "SeizeAlert!!!");
         text_layer_set_text(text_layer, "A fall has been\nreported to\nyour phone.");
@@ -131,25 +155,43 @@ static void countdown_callback() {
 */
 static void timer_callback() {
   int test, x, y, z;
+  AccelData accel;
 
   // Get last value from accelerometer
-  AccelData accel;
   accel_service_peek(&accel);
 
   // Calculate accelerometer values
   x = accel.x;
   y = accel.y;
   z = accel.z;
+  x = x * x;
+  y = y * y;
+  z = z * z;
+  
   test = (int)(abs(my_sqrt(x + y + z)-1000));		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
 
-  // Save to circular buffer and increase counter
-  history[last_x] = test;
-  last_x++;
+  if ( (test > FALL_THRESHSOLD)  && false_positive ){
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "A FALL has been detected\n");
+    store_values = true;
+    false_positive = false;
+    text_layer_set_font(text_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_BOLD_SUBSET_49)));
+    display_countdown(10);
+    report_countdown();
+    cntdown_ctr++;
+    text_layer_set_text(text_layer_up, "Fall?");
+    set_countdown();
+  }
 
-  // Check if last value on buffer
-  if (last_x >= HISTORY_MAX) {
-    last_x = 0;
-    test_buffer_vals(); 	// Test all buffer values
+  if ((store_values) && (!false_positive)){
+    // Save to circular buffer and increase counter
+    history[last_x] = test;
+    last_x++;
+
+    // Check if last value on buffer
+    if (last_x >= HISTORY_MAX) {
+      last_x = 0;
+      test_buffer_vals(); 	// Test all buffer values
+    }
   }
   set_timer();			// Reset timer function
 }
@@ -219,7 +261,8 @@ void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 	tests for a certain treshold (constant FALL_THRESHSOLD).
 */
 void test_buffer_vals(void){
-  int test;
+/*
+  int test, shake_counter = 0;
   for (int i=0 ; i < HISTORY_MAX ; i++){
     test = history[i];		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
 
@@ -235,7 +278,6 @@ void test_buffer_vals(void){
   
   if ((event_fall || event_seizure) && false_positive) {
     false_positive = false;
-    shake_counter = 0;
     text_layer_set_font(text_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_BOLD_SUBSET_49)));
     display_countdown(10);
     report_countdown();
@@ -246,6 +288,23 @@ void test_buffer_vals(void){
       text_layer_set_text(text_layer_up, "Fall?");
     }
     set_countdown();
+  }
+*/
+
+
+
+  int test;
+  for (int i=0 ; i < HISTORY_MAX ; i++){
+    test = history[i];		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
+
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Countdown is: %d\n", cntdown_ctr);
+
+    if ((test > FALSE_POSITIVE_THRESHSOLD)  && (!false_positive) && (i > COUNTDOWN_WINDOW) && (cntdown_ctr == 2)){
+      set_false_alarm_event();
+    } else if ((test > FALSE_POSITIVE_THRESHSOLD)  && (!false_positive) && (cntdown_ctr > 2)){
+      set_false_alarm_event();
+    }
+
   }
 }
 
@@ -278,10 +337,17 @@ void set_watchface_screen(void){
 	positive button (SELECT button on Pebble).
 */
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
+  set_false_alarm_event();
+}
+
+
+
+void set_false_alarm_event(void){
   false_positive = true;
   event_seizure = false;
   event_fall = false;
-  shake_counter = 0;
+  store_values = false;
+  last_x = 0;
   cntdown_ctr = 0;
   text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
   set_watchface_screen();
@@ -343,6 +409,44 @@ void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
 
 
 
+/*
+* Battery icon callback handler
+*/
+static void battery_layer_update_callback(Layer *layer, GContext *ctx) {
+
+	graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+	if (!battery_plugged) {
+		graphics_draw_bitmap_in_rect(ctx, icon_battery, GRect(0, 0, 24, 12));
+		graphics_context_set_stroke_color(ctx, GColorBlack);
+		graphics_context_set_fill_color(ctx, GColorWhite);
+		graphics_fill_rect(ctx, GRect(7, 4, (uint8_t)((battery_level / 100.0) * 11.0), 4), 0, GCornerNone);
+	} else {
+		graphics_draw_bitmap_in_rect(ctx, icon_battery_charge, GRect(0, 0, 24, 12));
+	}
+}
+
+
+/*
+* Battery state change
+*/
+static void battery_state_handler(BatteryChargeState charge) {
+	battery_level = charge.charge_percent;
+	battery_plugged = charge.is_plugged;
+	layer_mark_dirty(battery_layer);
+}
+
+
+/*
+* Bluetooth connection status
+*/
+static void bluetooth_state_handler(bool connected) {
+	layer_set_hidden(bitmap_layer_get_layer(bluetooth_layer), !connected);
+	if (!connected)
+		show_comms_state(false); // because we only set comms state on NAK/ACK it can be at odds with BT state - do this else that is confusing
+}
+
+
+
 
 
 /////////////////////////////////////////// Standard Logic (Init/Deinit) /////////////////////////////////////////////
@@ -361,6 +465,25 @@ static void window_load(Window *window) {
   accel_tap_service_subscribe(&accel_tap_handler);
   window_set_background_color(window, GColorBlack);
   Layer *window_layer = window_get_root_layer(window);
+
+  
+  // Battery Layer
+  icon_battery = gbitmap_create_with_resource(RESOURCE_ID_BATTERY_ICON);
+  icon_battery_charge = gbitmap_create_with_resource(RESOURCE_ID_BATTERY_CHARGE);
+
+  BatteryChargeState initial = battery_state_service_peek();
+  battery_level = initial.charge_percent;
+  battery_plugged = initial.is_plugged;
+  battery_layer = layer_create(GRect(144-26,4,24,12)); //24*12
+  layer_set_update_proc(battery_layer, &battery_layer_update_callback);
+  layer_add_child(window_layer, battery_layer);
+
+  // Bluetooth Layer
+  bluetooth_layer = bitmap_layer_create(GRect(144-26-10, 4, 9, 12));
+  layer_add_child(window_layer, bitmap_layer_get_layer(bluetooth_layer));
+  bluetooth_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BLUETOOTH_ICON);
+  bitmap_layer_set_bitmap(bluetooth_layer, bluetooth_bitmap);
+  layer_set_hidden(bitmap_layer_get_layer(bluetooth_layer), !bluetooth_connection_service_peek());
 
   // Welcome User
   GRect bounds = layer_get_bounds(window_layer);
