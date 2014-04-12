@@ -3,8 +3,10 @@
 *
 * Copyright © 2014 Pablo S. Campos.
 *
-* No part of this website may be reproduced without Pablo S. Campos's express consent.
+* No part of this application may be reproduced without Pablo S. Campos's express consent.
 *
+* For more contact Pablo S. Campos at pablo.campos@utexas.edu
+* 
 */
 
 
@@ -35,6 +37,7 @@ Layer *line_layer;
 static Layer *progress_layer;
 static Layer *battery_layer;
 static BitmapLayer *bluetooth_layer;
+static BitmapLayer *comms_layer;
 
 static GBitmap *icon_battery;
 static GBitmap *icon_battery_charge;
@@ -48,6 +51,9 @@ static TextLayer *text_layer_up;
 
 // SeizeAlert logic globals
 static int cntdown_ctr = 0;
+
+static uint8_t battery_level;
+static bool battery_plugged;
 
 char text_buffer[250];
 int timer_frequency = 100;		// Time setup for timer function in milliseconds
@@ -170,7 +176,7 @@ static void timer_callback() {
   
   test = (int)(abs(my_sqrt(x + y + z)-1000));		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
 
-  if ( (test > FALL_THRESHSOLD)  && false_positive ){
+  if ( (test > FALL_THRESHSOLD) && false_positive ){
     APP_LOG(APP_LOG_LEVEL_DEBUG, "A FALL has been detected\n");
     store_values = true;
     false_positive = false;
@@ -208,6 +214,7 @@ void accel_data_handler(AccelData *data, uint32_t num_samples) {
 	Report that a fall has happened!!!
 */
 static void report_fall(void) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "SeizeAlert is datalogging a fall\n");
   event_seizure = false;
   event_fall = false;
   SeizureData *seizure_data = &s_seizure_datas[0];
@@ -224,6 +231,7 @@ static void report_fall(void) {
 	Report that a seizure has happened!!!
 */
 static void report_seizure(void) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "SeizeAlert is datalogging a seizure\n");
   event_seizure = false;
   event_fall = false;
   SeizureData *seizure_data = &s_seizure_datas[1];
@@ -240,6 +248,7 @@ static void report_seizure(void) {
 	Report that countdown has started!!!
 */
 static void report_countdown(void) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "SeizeAlert is datalogging a countdown\n");
   SeizureData *seizure_data = &s_seizure_datas[2];
   time_t now = time(NULL);
   data_logging_log(seizure_data->logging_session, (uint8_t *)&now, 1);
@@ -297,9 +306,7 @@ void test_buffer_vals(void){
   for (int i=0 ; i < HISTORY_MAX ; i++){
     test = history[i];		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
 
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Countdown is: %d\n", cntdown_ctr);
-
-    if ((test > FALSE_POSITIVE_THRESHSOLD)  && (!false_positive) && (i > COUNTDOWN_WINDOW) && (cntdown_ctr == 2)){
+    if ((test > FALSE_POSITIVE_THRESHSOLD) && (!false_positive) && (i > COUNTDOWN_WINDOW) && (cntdown_ctr == 2)){
       set_false_alarm_event();
     } else if ((test > FALSE_POSITIVE_THRESHSOLD)  && (!false_positive) && (cntdown_ctr > 2)){
       set_false_alarm_event();
@@ -372,6 +379,7 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
 
 /////////////////////////////////////////// WatchFace Logic /////////////////////////////////////////////
 
+
 void line_layer_update_callback(Layer *layer, GContext* ctx) {
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
@@ -441,12 +449,7 @@ static void battery_state_handler(BatteryChargeState charge) {
 */
 static void bluetooth_state_handler(bool connected) {
 	layer_set_hidden(bitmap_layer_get_layer(bluetooth_layer), !connected);
-	if (!connected)
-		show_comms_state(false); // because we only set comms state on NAK/ACK it can be at odds with BT state - do this else that is confusing
 }
-
-
-
 
 
 /////////////////////////////////////////// Standard Logic (Init/Deinit) /////////////////////////////////////////////
@@ -538,8 +541,12 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(text_layer_up, GTextAlignmentCenter);
   layer_add_child(window_layer, text_layer_get_layer(text_layer_up));
 
-  // init SeizeAlert data
+  // Init SeizeAlert data
   init_seizure_datas();
+
+  // Subscribe Battery and Bluetooth handlers
+  battery_state_service_subscribe(&battery_state_handler);
+  bluetooth_connection_service_subscribe(bluetooth_state_handler);
 }
 
 
@@ -549,6 +556,13 @@ static void window_unload(Window *window) {
   text_layer_destroy(text_layer_up);
   text_layer_destroy(text_date_layer);
   text_layer_destroy(text_time_layer);
+
+  bitmap_layer_destroy(comms_layer);
+  bitmap_layer_destroy(bluetooth_layer);
+  layer_destroy(battery_layer);
+  gbitmap_destroy(icon_battery);
+  gbitmap_destroy(icon_battery_charge);
+  gbitmap_destroy(bluetooth_bitmap);
 
   deinit_seizure_datas();
 }
