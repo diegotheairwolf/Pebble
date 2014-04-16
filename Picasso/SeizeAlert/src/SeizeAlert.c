@@ -16,13 +16,17 @@
 #include <pebble_fonts.h>
 #include <SeizeAlert.h>
 
-#define HISTORY_MAX 20			// Check buffer every 2 seconds (20 accel data at 10Hz)
-#define FALL_THRESHSOLD 1500
-#define FALSE_POSITIVE_THRESHSOLD 900
-#define SEIZURE_THRESHSOLD 10000	// High value because we are NOT sure if we will attempt to detect a seizure
-#define SEIZURE_SHAKING 3
 #define ALERT_WINDOW 10
-#define COUNTDOWN_WINDOW 3
+
+#define STEP_ONE_LOWER_BOUND 800
+#define STEP_ONE_HIGHER_BOUND 1000
+#define STEP_ONE_SAMPLES 4
+
+#define STEP_TWO_LOWER_BOUND 500
+#define STEP_TWO_SAMPLES 25
+
+#define STEP_THREE_HIGHER_BOUND 100
+#define STEP_THREE_SAMPLES 50
 
 //////////////////////////////////////////  Globals  ///////////////////////////////////////////////
 
@@ -34,10 +38,8 @@ TextLayer *text_time_layer;
 Layer *line_layer;
 
 // Battery and Bluetooth layers
-static Layer *progress_layer;
 static Layer *battery_layer;
 static BitmapLayer *bluetooth_layer;
-static BitmapLayer *comms_layer;
 
 static GBitmap *icon_battery;
 static GBitmap *icon_battery_charge;
@@ -48,6 +50,8 @@ static Window *window;
 static TextLayer *seizealert_layer;
 static TextLayer *text_layer;
 static TextLayer *text_layer_up;
+static GBitmap *seizealert_logo = NULL;
+static BitmapLayer *logo_layer;
 
 // SeizeAlert logic globals
 static int cntdown_ctr = 0;
@@ -56,18 +60,25 @@ static uint8_t battery_level;
 static bool battery_plugged;
 
 char text_buffer[250];
-int timer_frequency = 100;		// Time setup for timer function in milliseconds
+int timer_frequency = 40;		// Time setup for timer function in milliseconds
 int countdown_frequency = 1000;		// Time setup for countdown function in milliseconds
 static AppTimer *timer;
-static int last_x = 0;
 
 bool false_positive = true;		// State of false positive
-bool event_seizure = false;
 bool event_fall = false;
-bool store_values = false;
 
-static int history[HISTORY_MAX];	// Array of accelerometer data
 
+// SeizeAlert's FSM variables
+int current_state = 0;
+int step_1_counter = 0;
+int step_2_counter = 0;
+bool step_2_flag = false;
+int step_3_counter = 0;
+bool step_3_flag = false;
+int step_4_counter = 0;
+bool step_4_flag = false;
+
+// Data logging struct
 typedef struct {
   uint32_t tag;
   TextLayer *text_layer;
@@ -129,18 +140,12 @@ static void countdown_callback() {
     if (cntdown_ctr == 10) {
       cntdown_ctr = 0;
       text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
-      if (event_seizure) {
-        report_seizure();
-        text_layer_set_text(text_layer_up, "SeizeAlert!!!");
-        text_layer_set_text(text_layer, "A seizure has been\nreported to\nyour phone.");
-      } else {
-        store_values = false;
+      if (event_fall) {
         report_fall();
         text_layer_set_text(text_layer_up, "SeizeAlert!!!");
         text_layer_set_text(text_layer, "A fall has been\nreported to\nyour phone.");
-      }
+      } 
       false_positive = true;
-      event_seizure = false;
       event_fall = false;
     } else {
       display_countdown(ALERT_WINDOW - cntdown_ctr);
@@ -176,29 +181,101 @@ static void timer_callback() {
   
   test = (int)(abs(my_sqrt(x + y + z)-1000));		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
 
-  if ( (test > FALL_THRESHSOLD) && false_positive ){
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "A FALL has been detected\n");
-    store_values = true;
-    false_positive = false;
-    text_layer_set_font(text_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_BOLD_SUBSET_49)));
-    display_countdown(10);
-    report_countdown();
-    cntdown_ctr++;
-    text_layer_set_text(text_layer_up, "Fall?");
-    set_countdown();
+  switch( current_state ){
+
+    case 0:	// Step 0: Normal mode
+      if ((test >= STEP_ONE_LOWER_BOUND) && (test <= STEP_ONE_HIGHER_BOUND) && (false_positive)){
+        current_state++;
+      } else {
+        current_state = 0;
+        break;
+      }
+
+    case 1:	// Step 1: Consecutive values between 800 and 1000 (4 or more)
+      if ((test >= STEP_ONE_LOWER_BOUND) && (test <= STEP_ONE_HIGHER_BOUND)){
+        step_1_counter++;
+        break;
+      } else if (step_1_counter >= STEP_ONE_SAMPLES){
+        //APP_LOG(APP_LOG_LEVEL_DEBUG, "Step 1 has passed: last value is = %d...counter = %d\n", test, step_1_counter);
+        step_1_counter = 0;
+        current_state++;
+      } else {
+        step_1_counter = 0;
+        current_state = 0;
+        break;
+      }
+
+    case 2:	// Step 2: Is there any value greater than 500 in the next second?
+      if (test >= STEP_TWO_LOWER_BOUND){
+        step_2_flag = true;
+      }
+      step_2_counter++;
+      if (step_2_counter >= STEP_TWO_SAMPLES){
+        //APP_LOG(APP_LOG_LEVEL_DEBUG, "Step 2 has passed: Checked 1 second (x>500): last value is = %d...counter = %d\n", test, step_2_counter);
+        step_2_counter = 0;
+        if (step_2_flag){
+          step_2_flag = false;
+          current_state++;
+          break;
+        } else {
+          current_state = 0;
+          break;
+        }
+      } else {
+        break;
+      }
+
+    case 3:	// Step 3: Check inactivity 2 seconds (all 50 values less than 100?)
+      if (test >= STEP_THREE_HIGHER_BOUND){
+        step_3_flag = true;
+      }
+      step_3_counter++;
+      if (step_3_counter >= STEP_THREE_SAMPLES){
+        //APP_LOG(APP_LOG_LEVEL_DEBUG, "Step 3 has passed: Checked 2 seconds (x<100?): last value is = %d...counter = %d\n", test, step_3_counter);
+        step_3_counter = 0;
+        if (step_3_flag){
+          step_3_flag = false;
+          current_state++;
+          break;
+        } else {
+          current_state += 2;
+        }
+      } else {
+        break;
+      }
+
+    case 4:	// Step 4: Recheck inactivity 2 seconds (all 50 values less than 100?)
+      if (test >= STEP_THREE_HIGHER_BOUND){
+        step_4_flag = true;
+      }
+      step_4_counter++;
+      if (step_4_counter >= STEP_THREE_SAMPLES){
+        //APP_LOG(APP_LOG_LEVEL_DEBUG, "Step 4 has passed: Re-checked 2 seconds (x<100?): last value is = %d...counter = %d\n", test, step_4_counter);
+        step_4_counter = 0;
+        if (step_4_flag){
+          step_4_flag = false;
+          current_state = 0;
+          break;
+        } else {
+          current_state++;
+        }
+      } else {
+        break;
+      }
+
+    case 5:	// Step 5: Start Countdown
+      //APP_LOG(APP_LOG_LEVEL_DEBUG, "Step 5 has passed: Countdown has started\n");
+      false_positive = false;
+      event_fall = true;
+      text_layer_set_font(text_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_BOLD_SUBSET_49)));
+      display_countdown(10);
+      report_countdown();
+      cntdown_ctr++;
+      text_layer_set_text(text_layer_up, "Fall?");
+      set_countdown();
+      current_state = 0;	// Reset current_state to zero
   }
 
-  if ((store_values) && (!false_positive)){
-    // Save to circular buffer and increase counter
-    history[last_x] = test;
-    last_x++;
-
-    // Check if last value on buffer
-    if (last_x >= HISTORY_MAX) {
-      last_x = 0;
-      test_buffer_vals(); 	// Test all buffer values
-    }
-  }
   set_timer();			// Reset timer function
 }
 
@@ -214,8 +291,7 @@ void accel_data_handler(AccelData *data, uint32_t num_samples) {
 	Report that a fall has happened!!!
 */
 static void report_fall(void) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "SeizeAlert is datalogging a fall\n");
-  event_seizure = false;
+  //APP_LOG(APP_LOG_LEVEL_DEBUG, "SeizeAlert is datalogging a fall\n");
   event_fall = false;
   SeizureData *seizure_data = &s_seizure_datas[0];
   time_t now = time(NULL);
@@ -226,29 +302,11 @@ static void report_fall(void) {
 }
 
 
-
-/*
-	Report that a seizure has happened!!!
-*/
-static void report_seizure(void) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "SeizeAlert is datalogging a seizure\n");
-  event_seizure = false;
-  event_fall = false;
-  SeizureData *seizure_data = &s_seizure_datas[1];
-  time_t now = time(NULL);
-  data_logging_log(seizure_data->logging_session, (uint8_t *)&now, 1);
-  data_logging_finish(seizure_data->logging_session);
-
-  seizure_data->logging_session = data_logging_create(SEIZURE_LOG_TAGS[1], DATA_LOGGING_UINT, 4, false);
-}
-
-
-
 /*
 	Report that countdown has started!!!
 */
 static void report_countdown(void) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "SeizeAlert is datalogging a countdown\n");
+  //APP_LOG(APP_LOG_LEVEL_DEBUG, "SeizeAlert is datalogging a countdown\n");
   SeizureData *seizure_data = &s_seizure_datas[2];
   time_t now = time(NULL);
   data_logging_log(seizure_data->logging_session, (uint8_t *)&now, 1);
@@ -261,58 +319,6 @@ static void report_countdown(void) {
 
 void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   // Do nothing
-}
-
-
-
-/*
-	This functions checks all values on the buffer and
-	tests for a certain treshold (constant FALL_THRESHSOLD).
-*/
-void test_buffer_vals(void){
-/*
-  int test, shake_counter = 0;
-  for (int i=0 ; i < HISTORY_MAX ; i++){
-    test = history[i];		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
-
-    if ((test > FALL_THRESHSOLD)  && false_positive) {		// Trigger countdown of fall event
-      event_fall = true;
-    }
-
-    if ((test > SEIZURE_THRESHSOLD)  && false_positive) {	// Trigger countdown of seizure event
-      shake_counter++;
-      if (shake_counter >= SEIZURE_SHAKING) event_seizure = true;
-    }
-  }
-  
-  if ((event_fall || event_seizure) && false_positive) {
-    false_positive = false;
-    text_layer_set_font(text_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_BOLD_SUBSET_49)));
-    display_countdown(10);
-    report_countdown();
-    cntdown_ctr++;
-    if (event_seizure){
-      text_layer_set_text(text_layer_up, "Seizure?");
-    } else {
-      text_layer_set_text(text_layer_up, "Fall?");
-    }
-    set_countdown();
-  }
-*/
-
-
-
-  int test;
-  for (int i=0 ; i < HISTORY_MAX ; i++){
-    test = history[i];		// int(abs(sqrt(x^2 + y^2 + z^2)-1000))
-
-    if ((test > FALSE_POSITIVE_THRESHSOLD) && (!false_positive) && (i > COUNTDOWN_WINDOW) && (cntdown_ctr == 2)){
-      set_false_alarm_event();
-    } else if ((test > FALSE_POSITIVE_THRESHSOLD)  && (!false_positive) && (cntdown_ctr > 2)){
-      set_false_alarm_event();
-    }
-
-  }
 }
 
 
@@ -348,14 +354,24 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
 }
 
 
-
+/*
+	This function makes sure seizealert is running 
+	in normal state.
+*/
 void set_false_alarm_event(void){
   false_positive = true;
-  event_seizure = false;
   event_fall = false;
-  store_values = false;
-  last_x = 0;
   cntdown_ctr = 0;
+
+  current_state = 0;
+  step_1_counter = 0;
+  step_2_counter = 0;
+  step_2_flag = false;
+  step_3_counter = 0;
+  step_3_flag = false;
+  step_4_counter = 0;
+  step_4_flag = false;
+
   text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
   set_watchface_screen();
   text_layer_set_text(text_layer, "");
@@ -463,8 +479,9 @@ static void click_config_provider(void *context) {
 
 
 static void window_load(Window *window) {
+
   // init tap service
-  accel_service_set_sampling_rate(ACCEL_SAMPLING_10HZ);
+  accel_service_set_sampling_rate(ACCEL_SAMPLING_25HZ);
   accel_tap_service_subscribe(&accel_tap_handler);
   window_set_background_color(window, GColorBlack);
   Layer *window_layer = window_get_root_layer(window);
@@ -477,12 +494,12 @@ static void window_load(Window *window) {
   BatteryChargeState initial = battery_state_service_peek();
   battery_level = initial.charge_percent;
   battery_plugged = initial.is_plugged;
-  battery_layer = layer_create(GRect(144-26,4,24,12)); //24*12
+  battery_layer = layer_create(GRect(0,3,24,12)); //24*12
   layer_set_update_proc(battery_layer, &battery_layer_update_callback);
   layer_add_child(window_layer, battery_layer);
 
   // Bluetooth Layer
-  bluetooth_layer = bitmap_layer_create(GRect(144-26-10, 4, 9, 12));
+  bluetooth_layer = bitmap_layer_create(GRect(25, 3, 9, 12));
   layer_add_child(window_layer, bitmap_layer_get_layer(bluetooth_layer));
   bluetooth_bitmap = gbitmap_create_with_resource(RESOURCE_ID_BLUETOOTH_ICON);
   bitmap_layer_set_bitmap(bluetooth_layer, bluetooth_bitmap);
@@ -490,7 +507,7 @@ static void window_load(Window *window) {
 
   // Welcome User
   GRect bounds = layer_get_bounds(window_layer);
-  seizealert_layer = text_layer_create((GRect) { .origin = { 0, 10 }, .size = { (bounds.size.w - 40), (bounds.size.h - 40) } });
+  seizealert_layer = text_layer_create((GRect) { .origin = { 0, 13 }, .size = { (bounds.size.w - 40), (bounds.size.h - 40) } });
   text_layer_set_text_color(seizealert_layer, GColorWhite);
   text_layer_set_background_color(seizealert_layer, GColorClear);
   text_layer_set_font(seizealert_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
@@ -499,7 +516,12 @@ static void window_load(Window *window) {
 
   text_layer_set_text_alignment(seizealert_layer, GTextAlignmentCenter);
   layer_add_child(window_layer, text_layer_get_layer(seizealert_layer));
-  text_layer_set_text(seizealert_layer, "SeizeAlert!\nSeizeAlert Status:\n-Running");
+  //text_layer_set_text(seizealert_layer, "SeizeAlert v2.0\nSeizeAlert Status:\n-Running");
+  
+  seizealert_logo = gbitmap_create_with_resource(RESOURCE_ID_PEBBLE_LOGO);		// SeizeAlert logo
+  logo_layer = bitmap_layer_create(GRect(7,13,(130),(60))); 	// Layer size (width, height)
+  layer_add_child(window_layer, bitmap_layer_get_layer(logo_layer));
+  bitmap_layer_set_bitmap(logo_layer, seizealert_logo);
 
   // WatchFace Layers
   text_date_layer = text_layer_create(GRect(8, 68, 144-8, 168-68));
@@ -557,7 +579,6 @@ static void window_unload(Window *window) {
   text_layer_destroy(text_date_layer);
   text_layer_destroy(text_time_layer);
 
-  bitmap_layer_destroy(comms_layer);
   bitmap_layer_destroy(bluetooth_layer);
   layer_destroy(battery_layer);
   gbitmap_destroy(icon_battery);

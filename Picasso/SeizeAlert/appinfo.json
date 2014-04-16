@@ -21,6 +21,11 @@
       },
       {
         "type": "png",
+        "name": "PEBBLE_LOGO",
+        "file": "images/seizealert_pebble_logo.png"
+      },
+      {
+        "type": "png",
         "name": "BATTERY_CHARGE",
         "file": "images/battery_charge.png"
       },

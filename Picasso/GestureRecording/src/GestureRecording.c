@@ -145,7 +145,7 @@ static void click_config_provider(void *context) {
 
 static void window_load(Window *window) {
   // init tap service
-  accel_service_set_sampling_rate(ACCEL_SAMPLING_10HZ);
+  accel_service_set_sampling_rate(ACCEL_SAMPLING_25HZ);
   accel_tap_service_subscribe(&accel_tap_handler);
 
   // initialize window

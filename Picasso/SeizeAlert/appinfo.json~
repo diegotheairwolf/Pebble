@@ -1,7 +1,7 @@
 {
   "uuid": "5f60123d-353f-421f-9882-1a3a71875a0e",
   "shortName": "SeizeAlert",
-  "longName": "SeizeAlert, A Seizure Detection and Notification System",
+  "longName": "SeizeAlert",
   "companyName": "SeizeAlert Inc.",
   "versionCode": 1,
   "versionLabel": "1.0.0",
@@ -17,6 +17,11 @@
         "menuIcon": true,
         "type": "png",
         "name": "IMAGE_MENU_ICON",
+        "file": "images/seizealert_logo_pebble.png"
+      },
+      {
+        "type": "png",
+        "name": "PEBBLE_LOGO",
         "file": "images/seizealert_logo_pebble.png"
       },
       {
